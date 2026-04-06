@@ -1,0 +1,51 @@
+# 개발: API(uvicorn --reload) + Vite(HMR). 순서는 postgres → api → web (depends_on).
+# 실행: docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: blog-api-dev
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+psycopg2://blog:blog@postgres:5432/blog
+      CORS_ORIGINS: http://localhost:5173,http://127.0.0.1:5173,http://localhost:8000,http://127.0.0.1:8000
+      UPLOAD_DIR: /app/uploads
+      SECRET_KEY: docker-dev-change-me
+      PYTHONPATH: /app/src
+    volumes:
+      - ./src:/app/src
+      - ./uploads:/app/uploads
+    command:
+      - uvicorn
+      - blog_app.main:app
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "8000"
+      - --reload
+      - --reload-dir
+      - /app/src
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    image: node:22-bookworm-slim
+    container_name: blog-web-dev
+    working_dir: /app
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_DEV_API_PROXY: http://api:8000
+    volumes:
+      - ./frontend:/app
+      - blog_web_node_modules:/app/node_modules
+    command: sh -c "npm ci && npm run dev -- --host 0.0.0.0 --port 5173"
+    depends_on:
+      - api
+
+volumes:
+  blog_web_node_modules:

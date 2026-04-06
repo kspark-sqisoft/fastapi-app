@@ -1,0 +1,32 @@
+# 배포용: API(프로덕션 이미지) + Nginx(빌드된 정적 파일, /api·/static 프록시).
+# 실행: docker compose -f docker-compose.yml -f docker-compose.release.yml up --build -d
+# 접속: http://localhost:8080 (프론트 + 동일 출처로 API)
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: blog-api
+    expose:
+      - "8000"
+    environment:
+      DATABASE_URL: postgresql+psycopg2://blog:blog@postgres:5432/blog
+      CORS_ORIGINS: http://localhost:8080,http://127.0.0.1:8080
+      UPLOAD_DIR: /app/uploads
+      SECRET_KEY: docker-release-change-me-in-production
+    volumes:
+      - ./uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: blog-web-release
+    ports:
+      - "8080:80"
+    depends_on:
+      - api

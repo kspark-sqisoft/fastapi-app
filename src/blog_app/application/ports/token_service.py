@@ -1,0 +1,6 @@
+from typing import Any, Protocol
+
+
+class TokenService(Protocol):
+    def create_access_token(self, subject: str, extra_claims: dict[str, Any] | None = None) -> str: ...
+    def decode_token(self, token: str) -> dict[str, Any]: ...
