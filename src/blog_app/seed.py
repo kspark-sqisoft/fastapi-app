@@ -115,7 +115,9 @@ def run(*, count: int, email: str, password: str) -> int:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Seed random blog posts.")
-    parser.add_argument("-n", "--count", type=int, default=20, help="Number of posts (default: 20)")
+    parser.add_argument(
+        "-n", "--count", type=int, default=20, help="Number of posts (default: 20)"
+    )
     parser.add_argument(
         "--email",
         default=SEED_EMAIL,

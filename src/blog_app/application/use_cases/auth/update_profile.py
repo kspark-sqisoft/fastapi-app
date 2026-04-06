@@ -14,7 +14,9 @@ def update_profile(
     if users.get_by_id(user_id) is None:
         raise UserNotFoundError()
     if profile_image_path is not None and clear_profile_image:
-        raise ValueError("profile_image_path and clear_profile_image are mutually exclusive")
+        raise ValueError(
+            "profile_image_path and clear_profile_image are mutually exclusive"
+        )
     dn = display_name.strip() if display_name is not None else None
     updated = users.update_profile(
         user_id,

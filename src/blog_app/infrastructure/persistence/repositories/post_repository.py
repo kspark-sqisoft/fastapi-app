@@ -26,11 +26,18 @@ class SqlAlchemyPostRepository:
         return self._to_entity(row) if row else None
 
     def list_all(self, skip: int = 0, limit: int = 100) -> list[Post]:
-        stmt = select(PostModel).order_by(PostModel.created_at.desc()).offset(skip).limit(limit)
+        stmt = (
+            select(PostModel)
+            .order_by(PostModel.created_at.desc())
+            .offset(skip)
+            .limit(limit)
+        )
         rows = self._session.scalars(stmt).all()
         return [self._to_entity(r) for r in rows]
 
-    def list_by_author(self, author_id: int, skip: int = 0, limit: int = 100) -> list[Post]:
+    def list_by_author(
+        self, author_id: int, skip: int = 0, limit: int = 100
+    ) -> list[Post]:
         stmt = (
             select(PostModel)
             .where(PostModel.author_id == author_id)

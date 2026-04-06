@@ -10,11 +10,17 @@ from fastapi import (
 )
 from sqlalchemy.orm import Session
 
-from blog_app.application.errors import EmailAlreadyRegisteredError, InvalidCredentialsError, UserNotFoundError
+from blog_app.application.errors import (
+    EmailAlreadyRegisteredError,
+    InvalidCredentialsError,
+    UserNotFoundError,
+)
 from blog_app.application.use_cases.auth.get_user import get_user_by_id
 from blog_app.application.use_cases.auth.login_user import login_user
 from blog_app.application.use_cases.auth.register_user import register_user
-from blog_app.application.use_cases.auth.update_profile import update_profile as apply_profile_update
+from blog_app.application.use_cases.auth.update_profile import (
+    update_profile as apply_profile_update,
+)
 from blog_app.domain.entities.user import User
 from blog_app.presentation.api.deps import (
     get_current_user_id,
@@ -33,7 +39,9 @@ from blog_app.presentation.schemas.auth import (
 from blog_app.presentation.upload_util import read_image_upload
 from blog_app.presentation.url_helper import static_file_url
 from blog_app.infrastructure.files.local_file_storage import LocalFileStorage
-from blog_app.infrastructure.persistence.repositories.user_repository import SqlAlchemyUserRepository
+from blog_app.infrastructure.persistence.repositories.user_repository import (
+    SqlAlchemyUserRepository,
+)
 from blog_app.infrastructure.security.bcrypt_password_hasher import BcryptPasswordHasher
 from blog_app.infrastructure.security.jwt_token_service import JwtTokenService
 
@@ -51,7 +59,9 @@ def _user_public(user: User, request: Request) -> UserPublic:
     )
 
 
-@router.post("/register", response_model=UserPublic, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/register", response_model=UserPublic, status_code=status.HTTP_201_CREATED
+)
 def register(
     request: Request,
     body: UserRegisterRequest,
@@ -69,7 +79,9 @@ def register(
             password_hasher=hasher,
         )
     except EmailAlreadyRegisteredError:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Email already registered"
+        )
     return _user_public(user, request)
 
 
@@ -83,10 +95,16 @@ def login(
     users = SqlAlchemyUserRepository(db)
     try:
         access, _uid = login_user(
-            body.email, body.password, users=users, password_hasher=hasher, tokens=tokens
+            body.email,
+            body.password,
+            users=users,
+            password_hasher=hasher,
+            tokens=tokens,
         )
     except InvalidCredentialsError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password"
+        )
     return TokenResponse(access_token=access)
 
 
@@ -100,7 +118,9 @@ def me(
     try:
         user = get_user_by_id(user_id, users=users)
     except UserNotFoundError:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
+        )
     return _user_public(user, request)
 
 
@@ -114,12 +134,16 @@ def patch_me(
     storage: LocalFileStorage = Depends(get_file_storage),
 ) -> UserPublic:
     if body.display_name is None and not body.clear_profile_image:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No changes requested")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="No changes requested"
+        )
     users = SqlAlchemyUserRepository(db)
     try:
         current = get_user_by_id(user_id, users=users)
     except UserNotFoundError:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
+        )
     old_avatar = current.profile_image_path
     try:
         user = apply_profile_update(
@@ -129,7 +153,9 @@ def patch_me(
             users=users,
         )
     except UserNotFoundError:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
+        )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     if body.clear_profile_image and old_avatar:
@@ -150,7 +176,9 @@ async def upload_avatar(
     try:
         current = get_user_by_id(user_id, users=users)
     except UserNotFoundError:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
+        )
     data, ct = await read_image_upload(image)
     try:
         rel = storage.save_avatar(user_id, data, ct)
@@ -160,7 +188,9 @@ async def upload_avatar(
     try:
         user = apply_profile_update(user_id, profile_image_path=rel, users=users)
     except UserNotFoundError:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
+        )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     if old:
