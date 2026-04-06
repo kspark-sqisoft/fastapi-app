@@ -1,83 +1,60 @@
-import { useState } from "react"
+import { useActionState } from "react"
 import { useNavigate } from "react-router-dom"
-import { toast } from "sonner"
-import { ApiError, api } from "@/lib/api"
+import { FormActionMessage } from "@/components/form/FormActionMessage"
+import { SubmitButton } from "@/components/form/SubmitButton"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { api } from "@/lib/api"
+
+type NewPostState = { error: string } | null
 
 export function NewPost() {
   const navigate = useNavigate()
-  const [title, setTitle] = useState("")
-  const [content, setContent] = useState("")
-  const [image, setImage] = useState<File | null>(null)
-  const [pending, setPending] = useState(false)
 
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    setPending(true)
+  const [state, formAction] = useActionState(async (_prev: NewPostState, formData: FormData): Promise<NewPostState> => {
+    const title = String(formData.get("title") ?? "").trim()
+    const content = String(formData.get("content") ?? "")
+    const image = formData.get("image")
+    const imageFile = image instanceof File && image.size > 0 ? image : null
+    if (!title) return { error: "제목을 입력하세요." }
     try {
-      const p = await api.createPost(title, content, image)
-      toast.success("글이 등록되었습니다")
-      navigate(`/posts/${p.id}`)
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "등록에 실패했습니다")
-    } finally {
-      setPending(false)
+      const post = await api.createPost(title, content, imageFile)
+      navigate(`/posts/${post.id}`)
+      return null
+    } catch {
+      return { error: "글 작성에 실패했습니다." }
     }
-  }
+  }, null)
 
   return (
-    <div className="mx-auto max-w-xl space-y-6">
-      <div>
-        <h1 className="text-3xl font-semibold tracking-tight">새 글</h1>
-        <p className="text-muted-foreground mt-1">제목·본문은 필수, 이미지는 선택입니다.</p>
-      </div>
+    <div className="mx-auto flex max-w-2xl flex-col gap-6 py-8">
       <Card>
         <CardHeader>
-          <CardTitle>작성</CardTitle>
-          <CardDescription>multipart로 서버에 전송됩니다.</CardDescription>
+          <CardTitle>새 글</CardTitle>
+          <CardDescription>제목과 내용을 입력하세요.</CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={(e) => void onSubmit(e)} className="space-y-4">
+          <form action={formAction} encType="multipart/form-data" className="flex flex-col gap-4">
             <div className="space-y-2">
               <Label htmlFor="title">제목</Label>
-              <Input
-                id="title"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                required
-                maxLength={500}
-              />
+              <Input id="title" name="title" type="text" required />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="content">본문</Label>
-              <Textarea
-                id="content"
-                value={content}
-                onChange={(e) => setContent(e.target.value)}
-                required
-                rows={10}
-                className="resize-y min-h-[200px]"
-              />
+              <Label htmlFor="content">내용</Label>
+              <Textarea id="content" name="content" rows={12} />
             </div>
             <div className="space-y-2">
               <Label htmlFor="image">이미지 (선택)</Label>
-              <Input
-                id="image"
-                type="file"
-                accept="image/jpeg,image/png,image/webp,image/gif"
-                onChange={(e) => setImage(e.target.files?.[0] ?? null)}
-              />
+              <Input id="image" name="image" type="file" accept="image/*" />
             </div>
+            <FormActionMessage message={state?.error} />
             <div className="flex gap-2">
+              <SubmitButton>게시</SubmitButton>
               <Button type="button" variant="outline" onClick={() => navigate(-1)}>
                 취소
-              </Button>
-              <Button type="submit" disabled={pending}>
-                {pending ? "등록 중…" : "등록"}
               </Button>
             </div>
           </form>

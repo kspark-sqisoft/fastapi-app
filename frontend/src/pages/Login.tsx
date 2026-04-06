@@ -1,75 +1,56 @@
-import { useState } from "react"
+import { useActionState } from "react"
 import { Link, useNavigate } from "react-router-dom"
-import { toast } from "sonner"
-import { ApiError } from "@/lib/api"
-import { useAuth } from "@/context/AuthContext"
-import { Button } from "@/components/ui/button"
+import { FormActionMessage } from "@/components/form/FormActionMessage"
+import { SubmitButton } from "@/components/form/SubmitButton"
+import { buttonVariants } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { useAuth } from "@/context/AuthContext"
+import { cn } from "@/lib/utils"
+
+type LoginState = { error: string } | null
 
 export function Login() {
-  const { login } = useAuth()
   const navigate = useNavigate()
-  const [email, setEmail] = useState("")
-  const [password, setPassword] = useState("")
-  const [pending, setPending] = useState(false)
+  const { login } = useAuth()
 
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    setPending(true)
+  const [state, formAction] = useActionState(async (_prev: LoginState, formData: FormData): Promise<LoginState> => {
+    const username = String(formData.get("username") ?? "").trim()
+    const password = String(formData.get("password") ?? "")
+    if (!username || !password) return { error: "아이디와 비밀번호를 입력하세요." }
     try {
-      await login(email, password)
-      toast.success("로그인했습니다")
-      navigate("/")
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "로그인에 실패했습니다")
-    } finally {
-      setPending(false)
+      await login(username, password)
+      navigate("/", { replace: true })
+      return null
+    } catch {
+      return { error: "로그인에 실패했습니다." }
     }
-  }
+  }, null)
 
   return (
-    <div className="mx-auto max-w-md">
+    <div className="mx-auto flex max-w-md flex-col gap-6 py-12">
       <Card>
         <CardHeader>
           <CardTitle>로그인</CardTitle>
-          <CardDescription>이메일과 비밀번호를 입력하세요.</CardDescription>
+          <CardDescription>계정으로 로그인하세요.</CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={(e) => void onSubmit(e)} className="space-y-4">
+          <form action={formAction} className="flex flex-col gap-4">
             <div className="space-y-2">
-              <Label htmlFor="email">이메일</Label>
-              <Input
-                id="email"
-                type="email"
-                autoComplete="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-              />
+              <Label htmlFor="username">아이디</Label>
+              <Input id="username" name="username" type="text" autoComplete="username" required />
             </div>
             <div className="space-y-2">
               <Label htmlFor="password">비밀번호</Label>
-              <Input
-                id="password"
-                type="password"
-                autoComplete="current-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-              />
+              <Input id="password" name="password" type="password" autoComplete="current-password" required />
             </div>
-            <Button type="submit" className="w-full" disabled={pending}>
-              {pending ? "처리 중…" : "로그인"}
-            </Button>
-            <p className="text-center text-sm text-muted-foreground">
-              계정이 없나요?{" "}
-              <Link to="/register" className="text-primary underline-offset-4 hover:underline">
-                가입
-              </Link>
-            </p>
+            <FormActionMessage message={state?.error} />
+            <SubmitButton className="w-full">로그인</SubmitButton>
           </form>
+          <Link to="/register" className={cn(buttonVariants({ variant: "link" }), "mt-2 inline-flex w-full justify-center")}>
+            계정이 없으면 회원가입
+          </Link>
         </CardContent>
       </Card>
     </div>
