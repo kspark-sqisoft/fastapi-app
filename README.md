@@ -240,8 +240,11 @@ cp .env.example .env
 | `DATABASE_URL` | SQLAlchemy URL | `sqlite:///./blog.db` |
 | `SECRET_KEY` | JWT 서명 키 | 개발용 기본값 (**운영에서는 반드시 변경**) |
 | `JWT_ALGORITHM` | JWT 알고리즘 | `HS256` |
-| `ACCESS_TOKEN_EXPIRE_MINUTES` | 액세스 토큰 유효 시간(분) | `1440` |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | 액세스 토큰 유효 시간(분) | `30` |
+| `REFRESH_TOKEN_EXPIRE_DAYS` | 리프레시 토큰 유효 기간(일) | `7` |
+| `LOG_LEVEL` | 앱 로그 레벨 (`DEBUG`, `INFO`, …) | `INFO` |
 | `APP_NAME` | OpenAPI 제목 등 | `Clean Blog API` |
+| `CORS_ORIGINS` | 허용 출처(쉼표 구분) | `http://localhost:5173,...` |
 | `UPLOAD_DIR` | 이미지 저장 디렉터리(프로젝트 기준) | `uploads` |
 | `MAX_UPLOAD_BYTES` | 이미지 최대 크기(바이트) | `5242880`(5MB) |
 
@@ -292,7 +295,8 @@ uv run python -m blog_app
 | 메서드 | 경로 | 인증 | 설명 |
 |--------|------|------|------|
 | POST | `/auth/register` | 없음 | 회원가입(JSON, 선택 `display_name`) |
-| POST | `/auth/login` | 없음 | 로그인 → `access_token` |
+| POST | `/auth/login` | 없음 | 로그인 → `access_token`, `refresh_token` (JWT, `typ` 클레임으로 구분) |
+| POST | `/auth/refresh` | 없음 | JSON `{"refresh_token":"..."}` → 새 액세스·리프레시(회전) |
 | GET | `/auth/me` | Bearer | 현재 사용자(`display_name`, `profile_image_url`) |
 | PATCH | `/auth/me` | Bearer | 프로필(JSON: `display_name`, `clear_profile_image`) |
 | POST | `/auth/me/avatar` | Bearer | 프로필 이미지 업로드(multipart 필드 `image`) |
@@ -306,7 +310,9 @@ uv run python -m blog_app
 | GET | `/static/...` | 없음 | 저장된 이미지 파일 |
 | GET | `/health` | 없음 | 헬스 체크 |
 
-인증 헤더 예: `Authorization: Bearer <access_token>`
+인증 헤더 예: `Authorization: Bearer <access_token>` (리프레시 토큰은 이 헤더에 넣지 않음)
+
+환경 변수로 만료를 조절할 수 있습니다: `ACCESS_TOKEN_EXPIRE_MINUTES`(기본 30), `REFRESH_TOKEN_EXPIRE_DAYS`(기본 7).
 
 ### curl 예시
 
@@ -316,11 +322,17 @@ curl -s -X POST http://127.0.0.1:8000/api/v1/auth/register \
   -H 'Content-Type: application/json' \
   -d '{"email":"you@example.com","password":"yourpassword","display_name":"나"}'
 
-# 로그인
-TOKEN=$(curl -s -X POST http://127.0.0.1:8000/api/v1/auth/login \
+# 로그인 (access_token, refresh_token)
+LOGIN_JSON=$(curl -s -X POST http://127.0.0.1:8000/api/v1/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"email":"you@example.com","password":"yourpassword"}' \
-  | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+  -d '{"email":"you@example.com","password":"yourpassword"}')
+TOKEN=$(echo "$LOGIN_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+REFRESH=$(echo "$LOGIN_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['refresh_token'])")
+
+# 액세스 만료 후 — refresh_token 으로 새 토큰 쌍 발급(회전)
+curl -s -X POST http://127.0.0.1:8000/api/v1/auth/refresh \
+  -H 'Content-Type: application/json' \
+  -d "{\"refresh_token\":\"$REFRESH\"}"
 
 # 프로필 이름 수정
 curl -s -X PATCH http://127.0.0.1:8000/api/v1/auth/me \

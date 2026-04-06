@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import (
     APIRouter,
     BackgroundTasks,
@@ -29,6 +31,7 @@ from blog_app.infrastructure.persistence.repositories.post_repository import (
 )
 
 router = APIRouter(prefix="/posts", tags=["posts"])
+log = logging.getLogger(__name__)
 
 
 def _post_response(p: Post, request: Request) -> PostResponse:
@@ -54,6 +57,13 @@ def list_posts_endpoint(
 ) -> list[PostResponse]:
     repo = SqlAlchemyPostRepository(db)
     items = list_posts(posts=repo, author_id=author_id, skip=skip, limit=limit)
+    log.debug(
+        "List posts count=%s author_id=%s skip=%s limit=%s",
+        len(items),
+        author_id,
+        skip,
+        limit,
+    )
     return [_post_response(p, request) for p in items]
 
 
@@ -65,6 +75,7 @@ def get_post_endpoint(
     try:
         p = get_post(post_id, posts=repo)
     except PostNotFoundError:
+        log.info("Get post not found post_id=%s", post_id)
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Post not found"
         )
@@ -90,6 +101,13 @@ async def create_post_endpoint(
         except ValueError as e:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     p = create_post(title, content, user_id, image_path=image_rel, posts=repo)
+    assert p.id is not None
+    log.info(
+        "Post created id=%s author_id=%s has_image=%s",
+        p.id,
+        user_id,
+        image_rel is not None,
+    )
     return _post_response(p, request)
 
 
@@ -111,6 +129,12 @@ async def upload_post_image(
             status_code=status.HTTP_404_NOT_FOUND, detail="Post not found"
         )
     if existing.author_id != user_id:
+        log.warning(
+            "Forbidden post image upload post_id=%s actor=%s owner=%s",
+            post_id,
+            user_id,
+            existing.author_id,
+        )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not allowed to edit this post",
@@ -141,6 +165,7 @@ async def upload_post_image(
         )
     if old:
         background_tasks.add_task(storage.delete_if_exists, old)
+    log.info("Post image set post_id=%s user_id=%s", post_id, user_id)
     return _post_response(p, request)
 
 
@@ -161,6 +186,12 @@ def delete_post_image(
             status_code=status.HTTP_404_NOT_FOUND, detail="Post not found"
         )
     if existing.author_id != user_id:
+        log.warning(
+            "Forbidden post image delete post_id=%s actor=%s owner=%s",
+            post_id,
+            user_id,
+            existing.author_id,
+        )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not allowed to edit this post",
@@ -189,6 +220,7 @@ def delete_post_image(
             detail="Not allowed to edit this post",
         )
     background_tasks.add_task(storage.delete_if_exists, old)
+    log.info("Post image removed post_id=%s user_id=%s", post_id, user_id)
     return _post_response(p, request)
 
 
@@ -218,10 +250,12 @@ def update_post_endpoint(
             status_code=status.HTTP_404_NOT_FOUND, detail="Post not found"
         )
     except ForbiddenError:
+        log.warning("Forbidden post patch post_id=%s actor=%s", post_id, user_id)
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not allowed to edit this post",
         )
+    log.info("Post updated post_id=%s user_id=%s", post_id, user_id)
     return _post_response(p, request)
 
 
@@ -242,9 +276,11 @@ def delete_post_endpoint(
             status_code=status.HTTP_404_NOT_FOUND, detail="Post not found"
         )
     except ForbiddenError:
+        log.warning("Forbidden post delete post_id=%s actor=%s", post_id, user_id)
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not allowed to delete this post",
         )
+    log.info("Post deleted post_id=%s user_id=%s", post_id, user_id)
     if existing and existing.image_path:
         background_tasks.add_task(storage.delete_if_exists, existing.image_path)

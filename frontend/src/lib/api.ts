@@ -1,12 +1,20 @@
 const TOKEN_KEY = "blog_token"
+const REFRESH_KEY = "blog_refresh_token"
 
 export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY)
 }
 
-export function setToken(token: string | null) {
-  if (token) localStorage.setItem(TOKEN_KEY, token)
+export function getRefreshToken(): string | null {
+  return localStorage.getItem(REFRESH_KEY)
+}
+
+/** 액세스·리프레시를 함께 저장합니다. null이면 해당 키를 제거합니다. */
+export function persistAuthTokens(access: string | null, refresh: string | null) {
+  if (access) localStorage.setItem(TOKEN_KEY, access)
   else localStorage.removeItem(TOKEN_KEY)
+  if (refresh) localStorage.setItem(REFRESH_KEY, refresh)
+  else localStorage.removeItem(REFRESH_KEY)
 }
 
 /** Dev: Vite proxy forwards /api and /static. Prod: set VITE_API_ORIGIN e.g. http://localhost:8000 */
@@ -43,19 +51,70 @@ async function parseError(res: Response): Promise<string> {
   }
 }
 
-export async function apiJson<T>(
-  path: string,
-  init: RequestInit & { auth?: boolean } = {},
-): Promise<T> {
-  const headers = new Headers(init.headers)
-  if (!headers.has("Content-Type") && init.body && !(init.body instanceof FormData)) {
+export type TokenResponse = {
+  access_token: string
+  refresh_token: string
+  token_type: string
+}
+
+let refreshInflight: Promise<boolean> | null = null
+
+async function tryRefreshAccessToken(): Promise<boolean> {
+  const rt = getRefreshToken()
+  if (!rt) return false
+
+  if (!refreshInflight) {
+    refreshInflight = (async () => {
+      try {
+        const res = await fetch(apiPath("/api/v1/auth/refresh"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ refresh_token: rt }),
+        })
+        if (!res.ok) {
+          persistAuthTokens(null, null)
+          return false
+        }
+        const data = (await res.json()) as TokenResponse
+        persistAuthTokens(data.access_token, data.refresh_token)
+        return true
+      } catch {
+        persistAuthTokens(null, null)
+        return false
+      } finally {
+        refreshInflight = null
+      }
+    })()
+  }
+  return refreshInflight
+}
+
+type ApiJsonInit = RequestInit & { auth?: boolean; _retryAfterRefresh?: boolean }
+
+export async function apiJson<T>(path: string, init: ApiJsonInit = {}): Promise<T> {
+  const useAuth = init.auth !== false
+  const retryAfterRefresh = init._retryAfterRefresh === true
+  const fetchInit = { ...init } as Record<string, unknown>
+  delete fetchInit.auth
+  delete fetchInit._retryAfterRefresh
+
+  const headers = new Headers((fetchInit.headers as HeadersInit) ?? undefined)
+  if (!headers.has("Content-Type") && fetchInit.body && !(fetchInit.body instanceof FormData)) {
     headers.set("Content-Type", "application/json")
   }
-  if (init.auth !== false) {
+  if (useAuth) {
     const t = getToken()
     if (t) headers.set("Authorization", `Bearer ${t}`)
   }
-  const res = await fetch(apiPath(path), { ...init, headers })
+  const res = await fetch(apiPath(path), { ...(fetchInit as RequestInit), headers })
+
+  if (res.status === 401 && useAuth && !retryAfterRefresh && getRefreshToken()) {
+    const ok = await tryRefreshAccessToken()
+    if (ok) {
+      return apiJson<T>(path, { ...init, _retryAfterRefresh: true })
+    }
+  }
+
   if (!res.ok) {
     throw new ApiError(await parseError(res), res.status)
   }
@@ -80,8 +139,6 @@ export type Post = {
   created_at: string | null
   updated_at: string | null
 }
-
-export type TokenResponse = { access_token: string; token_type: string }
 
 export const api = {
   register: (body: { email: string; password: string; display_name?: string }) =>

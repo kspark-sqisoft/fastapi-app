@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import (
     APIRouter,
     BackgroundTasks,
@@ -13,10 +15,12 @@ from sqlalchemy.orm import Session
 from blog_app.application.errors import (
     EmailAlreadyRegisteredError,
     InvalidCredentialsError,
+    InvalidRefreshTokenError,
     UserNotFoundError,
 )
 from blog_app.application.use_cases.auth.get_user import get_user_by_id
 from blog_app.application.use_cases.auth.login_user import login_user
+from blog_app.application.use_cases.auth.refresh_session import refresh_session
 from blog_app.application.use_cases.auth.register_user import register_user
 from blog_app.application.use_cases.auth.update_profile import (
     update_profile as apply_profile_update,
@@ -31,6 +35,7 @@ from blog_app.presentation.api.deps import (
 )
 from blog_app.presentation.schemas.auth import (
     ProfileUpdateRequest,
+    RefreshTokenRequest,
     TokenResponse,
     UserLoginRequest,
     UserPublic,
@@ -46,6 +51,7 @@ from blog_app.infrastructure.security.bcrypt_password_hasher import BcryptPasswo
 from blog_app.infrastructure.security.jwt_token_service import JwtTokenService
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+log = logging.getLogger(__name__)
 
 
 def _user_public(user: User, request: Request) -> UserPublic:
@@ -79,9 +85,12 @@ def register(
             password_hasher=hasher,
         )
     except EmailAlreadyRegisteredError:
+        log.info("Register rejected: email already registered")
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="Email already registered"
         )
+    assert user.id is not None
+    log.info("User registered id=%s", user.id)
     return _user_public(user, request)
 
 
@@ -94,7 +103,7 @@ def login(
 ) -> TokenResponse:
     users = SqlAlchemyUserRepository(db)
     try:
-        access, _uid = login_user(
+        access, refresh, _uid = login_user(
             body.email,
             body.password,
             users=users,
@@ -102,10 +111,35 @@ def login(
             tokens=tokens,
         )
     except InvalidCredentialsError:
+        log.warning("Login failed (invalid credentials)")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password"
         )
-    return TokenResponse(access_token=access)
+    log.info("Login ok user_id=%s", _uid)
+    return TokenResponse(access_token=access, refresh_token=refresh)
+
+
+@router.post("/refresh", response_model=TokenResponse)
+def refresh_tokens(
+    body: RefreshTokenRequest,
+    db: Session = Depends(get_db),
+    token_svc: JwtTokenService = Depends(get_token_service),
+) -> TokenResponse:
+    users = SqlAlchemyUserRepository(db)
+    try:
+        access, new_refresh = refresh_session(
+            body.refresh_token,
+            users=users,
+            tokens=token_svc,
+        )
+    except InvalidRefreshTokenError:
+        log.warning("Refresh token rejected")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired refresh token",
+        )
+    log.info("Access token refreshed (session rotated)")
+    return TokenResponse(access_token=access, refresh_token=new_refresh)
 
 
 @router.get("/me", response_model=UserPublic)
@@ -118,9 +152,11 @@ def me(
     try:
         user = get_user_by_id(user_id, users=users)
     except UserNotFoundError:
+        log.warning("GET /me: user_id=%s not found", user_id)
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
         )
+    log.debug("GET /me user_id=%s", user_id)
     return _user_public(user, request)
 
 
@@ -160,6 +196,12 @@ def patch_me(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     if body.clear_profile_image and old_avatar:
         background_tasks.add_task(storage.delete_if_exists, old_avatar)
+    log.info(
+        "Profile updated user_id=%s display_name=%s clear_image=%s",
+        user_id,
+        body.display_name is not None,
+        body.clear_profile_image,
+    )
     return _user_public(user, request)
 
 
@@ -195,4 +237,5 @@ async def upload_avatar(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     if old:
         background_tasks.add_task(storage.delete_if_exists, old)
+    log.info("Avatar uploaded user_id=%s", user_id)
     return _user_public(user, request)

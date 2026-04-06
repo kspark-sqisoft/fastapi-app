@@ -11,11 +11,13 @@ def login_user(
     users: UserRepository,
     password_hasher: PasswordHasher,
     tokens: TokenService,
-) -> tuple[str, int]:
+) -> tuple[str, str, int]:
     normalized = email.strip().lower()
     user = users.get_by_email(normalized)
     if user is None or not password_hasher.verify(password, user.hashed_password):
         raise InvalidCredentialsError()
     assert user.id is not None
-    access = tokens.create_access_token(subject=str(user.id))
-    return access, user.id
+    sub = str(user.id)
+    access = tokens.create_access_token(subject=sub)
+    refresh = tokens.create_refresh_token(subject=sub)
+    return access, refresh, user.id

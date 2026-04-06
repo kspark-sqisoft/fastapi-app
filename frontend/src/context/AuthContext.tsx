@@ -7,7 +7,7 @@ import {
   useState,
   type ReactNode,
 } from "react"
-import { ApiError, api, getToken, setToken, type UserPublic } from "@/lib/api"
+import { ApiError, api, getToken, persistAuthTokens, type UserPublic } from "@/lib/api"
 
 type AuthContextValue = {
   user: UserPublic | null
@@ -36,7 +36,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(me)
     } catch (e) {
       if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
-        setToken(null)
+        persistAuthTokens(null, null)
         setUser(null)
       }
       throw e
@@ -52,8 +52,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [refreshMe])
 
   const login = useCallback(async (email: string, password: string) => {
-    const { access_token } = await api.login({ email, password })
-    setToken(access_token)
+    const { access_token, refresh_token } = await api.login({ email, password })
+    persistAuthTokens(access_token, refresh_token)
     await refreshMe()
   }, [refreshMe])
 
@@ -66,7 +66,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   )
 
   const logout = useCallback(() => {
-    setToken(null)
+    persistAuthTokens(null, null)
     setUser(null)
   }, [])
 

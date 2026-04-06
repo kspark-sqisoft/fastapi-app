@@ -10,10 +10,12 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./blog.db"
     secret_key: str = "change-me-in-production-use-long-random-string"
     jwt_algorithm: str = "HS256"
-    access_token_expire_minutes: int = 60 * 24
+    access_token_expire_minutes: int = 30
+    refresh_token_expire_days: int = 7
     upload_dir: Path = Path("uploads")
     max_upload_bytes: int = 5 * 1024 * 1024
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
+    log_level: str = "INFO"
 
     @property
     def cors_origin_list(self) -> list[str]:
